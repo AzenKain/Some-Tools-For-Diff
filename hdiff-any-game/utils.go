@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
+	"time"
+
 	"path/filepath"
 	"runtime"
 	"sync"
 
+	"github.com/amenzhinsky/go-memexec"
 	"github.com/schollz/progressbar/v3"
 )
 
@@ -97,11 +99,6 @@ func ZipWith7za(src, dest string) error {
 		return fmt.Errorf("source folder is empty: %s", src)
 	}
 
-	sevenZipPath, err := filepath.Abs(filepath.Join("bin", "7za.exe"))
-	if err != nil {
-		return err
-	}
-
 	destAbs, err := filepath.Abs(filepath.Join(".", dest))
 	if err != nil {
 		return err
@@ -112,50 +109,75 @@ func ZipWith7za(src, dest string) error {
 		args = append(args, f.Name())
 	}
 
-	cmd := exec.Command(sevenZipPath, args...)
+	exe, err := memexec.New(sevenZip)
+	if err != nil {
+		return err
+	}
+	defer exe.Close()
+	cmd := exe.Command(args...)
 	cmd.Dir = src
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
+	cmd.Stdout = nil
+	cmd.Stderr = nil
 	return cmd.Run()
 }
 
-func RemoveFolderWithProgress(folder string) error {
+func RemoveFolderWithProgress(folder string, title string) error {
 	var total int
 	filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
-		if err == nil {
+		if err == nil && !info.IsDir() {
 			total++
 		}
 		return nil
 	})
 
 	bar := progressbar.NewOptions(total,
-		progressbar.OptionSetDescription("Removing temp files"),
+		progressbar.OptionSetDescription(title),
 		progressbar.OptionShowCount(),
 		progressbar.OptionSetWidth(30),
 		progressbar.OptionSetPredictTime(true),
 	)
 
-	err := filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return err
+			return nil
 		}
-		if !info.IsDir() {
-			if err := os.Remove(path); err != nil {
-				return err
+		if info.IsDir() {
+			return nil
+		}
+
+		var rmErr error
+		for i := 0; i < 10; i++ {
+			rmErr = os.Remove(path)
+			if rmErr == nil {
+				break
 			}
-			bar.Add(1)
+			time.Sleep(300 * time.Millisecond)
 		}
+		if rmErr != nil {
+			fmt.Printf("⚠️ Could not remove %s: %v\n", path, rmErr)
+		}
+
+		bar.Add(1)
 		return nil
 	})
+
+	if err := os.RemoveAll(folder); err != nil {
+		return fmt.Errorf("failed to remove folder %s: %w", folder, err)
+	}
+	bar.Finish()
+	return nil
+}
+
+func Hdiffz(oldPath, newPath, outDiff string) error {
+	args := []string{"-s-64", "-SD", "-c-zstd-21-24", "-d", oldPath, newPath, outDiff}
+	exe, err := memexec.New(hdiffz)
 	if err != nil {
 		return err
 	}
-	if err := os.RemoveAll(folder); err != nil {
-		return err
-	}
+	defer exe.Close()
+	cmd := exe.Command(args...)
+	cmd.Stdout = nil
+	cmd.Stderr = nil
 
-	bar.Finish()
-	fmt.Println("\nTemp folder removed")
-	return nil
+	return cmd.Run()
 }

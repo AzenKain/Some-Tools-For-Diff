@@ -1,112 +1,90 @@
 package main
 
 import (
-	"archive/zip"
 	"fmt"
-	"io"
 	"ldiff-converter/pb"
 	"os"
 	"path/filepath"
-	"strings"
+	"time"
+
+	"github.com/amenzhinsky/go-memexec"
+	"github.com/schollz/progressbar/v3"
 )
 
-func Unzip(src, dest string) error {
-	r, err := zip.OpenReader(src)
+func UnzipWith7za(src, dest string) error {
+	if _, err := os.Stat(src); os.IsNotExist(err) {
+		return fmt.Errorf("source file does not exist: %s", src)
+	}
+
+	if err := os.MkdirAll(dest, 0755); err != nil {
+		return err
+	}
+
+	destAbs, err := filepath.Abs(dest)
 	if err != nil {
 		return err
 	}
-	defer r.Close()
 
-	for _, f := range r.File {
-		fpath := filepath.Join(dest, f.Name)
-		if !strings.HasPrefix(fpath, filepath.Clean(dest)+string(os.PathSeparator)) {
-			return fmt.Errorf("illegal file path: %s", fpath)
-		}
+	exe, err := memexec.New(sevenZip)
+	if err != nil {
+		return err
+	}
+	defer exe.Close()
 
-		if f.FileInfo().IsDir() {
-			if err := os.MkdirAll(fpath, f.Mode()); err != nil {
-				return err
-			}
-			continue
-		}
+	args := []string{"x", "-y", "-o" + destAbs, src}
 
-		if err := os.MkdirAll(filepath.Dir(fpath), 0755); err != nil {
-			return err
-		}
-
-		rc, err := f.Open()
-		if err != nil {
-			return err
-		}
-
-		outFile, err := os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
-		if err != nil {
-			rc.Close()
-			return err
-		}
-
-		_, err = io.Copy(outFile, rc)
-		rc.Close()
-		outFile.Close()
-		if err != nil {
-			return err
-		}
+	cmd := exe.Command(args...)
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	if err := cmd.Run(); err != nil {
+		return err
 	}
 	return nil
 }
 
-func Zip(src, dest string) error {
-	zipFile, err := os.Create(dest)
+func ZipWith7za(src, dest string) error {
+	if _, err := os.Stat(src); os.IsNotExist(err) {
+		return fmt.Errorf("source folder does not exist: %s", src)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+		return err
+	}
+
+	files, err := os.ReadDir(src)
 	if err != nil {
 		return err
 	}
-	defer zipFile.Close()
 
-	zw := zip.NewWriter(zipFile)
-	defer zw.Close()
+	if len(files) == 0 {
+		return fmt.Errorf("source folder is empty: %s", src)
+	}
 
-	err = filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		relPath, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-
-		if info.IsDir() {
-			if relPath == "." {
-				return nil
-			}
-			_, err := zw.Create(relPath + "/")
-			return err
-		}
-
-		fh, err := zip.FileInfoHeader(info)
-		if err != nil {
-			return err
-		}
-		fh.Name = relPath
-		fh.Method = zip.Deflate
-
-		writer, err := zw.CreateHeader(fh)
-		if err != nil {
-			return err
-		}
-
-		file, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-
-		_, err = io.Copy(writer, file)
+	destAbs, err := filepath.Abs(filepath.Join(".", dest))
+	if err != nil {
 		return err
-	})
+	}
 
-	return err
+	args := []string{"a", "-tzip", "-mx=1", "-mmt=on", destAbs}
+	for _, f := range files {
+		args = append(args, f.Name())
+	}
+
+	exe, err := memexec.New(sevenZip)
+	if err != nil {
+		return err
+	}
+	defer exe.Close()
+	cmd := exe.Command(args...)
+	cmd.Dir = src
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	return nil
 }
+
 func MakeDiffMap(manifest *pb.ManifestProto, chunkNames []string) ([]*HDiffData, error) {
 	var hdiffFiles []*HDiffData
 
@@ -139,4 +117,52 @@ func MakeDiffMap(manifest *pb.ManifestProto, chunkNames []string) ([]*HDiffData,
 	}
 
 	return hdiffFiles, nil
+}
+
+func RemoveFolderWithProgress(folder string, title string) error {
+	var total int
+	filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() {
+			total++
+		}
+		return nil
+	})
+
+	bar := progressbar.NewOptions(total,
+		progressbar.OptionSetDescription(title),
+		progressbar.OptionShowCount(),
+		progressbar.OptionSetWidth(30),
+		progressbar.OptionSetPredictTime(true),
+	)
+
+	_ = filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() {
+			return nil
+		}
+
+		// Retry tối đa 10 lần khi xóa
+		var rmErr error
+		for i := 0; i < 10; i++ {
+			rmErr = os.Remove(path)
+			if rmErr == nil {
+				break
+			}
+			time.Sleep(300 * time.Millisecond)
+		}
+		if rmErr != nil {
+			fmt.Printf("⚠️ Could not remove %s: %v\n", path, rmErr)
+		}
+
+		bar.Add(1)
+		return nil
+	})
+
+	if err := os.RemoveAll(folder); err != nil {
+		return fmt.Errorf("failed to remove folder %s: %w", folder, err)
+	}
+	bar.Finish()
+	return nil
 }

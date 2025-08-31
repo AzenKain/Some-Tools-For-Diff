@@ -133,6 +133,5 @@ func DiffFolders(oldPath, newPath string) (*DiffResult, error) {
 	close(jobs)
 	wg.Wait()
 	bar.Finish()
-
 	return result, nil
 }

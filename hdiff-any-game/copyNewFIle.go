@@ -36,6 +36,5 @@ func CopyNewFiles(newPath string, result *DiffResult) error {
 		bar.Add(1)
 	}
 	bar.Finish()
-
 	return nil
 }

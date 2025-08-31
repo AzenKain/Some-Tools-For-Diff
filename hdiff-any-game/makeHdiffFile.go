@@ -31,7 +31,7 @@ func MakeHdiffFile(oldPath string, newPath string, changedFiles []string) error 
 	}
 
 	bar := progressbar.NewOptions(len(changedFiles),
-		progressbar.OptionSetDescription("Creating HDIFF files"),
+		progressbar.OptionSetDescription("📦 Creating HDiff files"),
 		progressbar.OptionShowCount(),
 		progressbar.OptionSetWidth(30),
 		progressbar.OptionSetPredictTime(true),
@@ -54,7 +54,7 @@ func MakeHdiffFile(oldPath string, newPath string, changedFiles []string) error 
 					fmt.Fprintf(os.Stderr, "failed to create dir: %v\n", err)
 					continue
 				}
-				runHdiffz(oldFile, newFile, hdiffPath)
+				Hdiffz(oldFile, newFile, hdiffPath)
 				bar.Add(1)
 			}
 		})
