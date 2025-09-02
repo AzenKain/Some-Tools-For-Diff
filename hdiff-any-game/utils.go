@@ -104,7 +104,7 @@ func ZipWith7za(src, dest string) error {
 		return err
 	}
 
-	args := []string{"a", "-tzip", "-mx=1", "-mmt=on", destAbs}
+	args := []string{"a", "-tzip", "-mx=3", "-mmt=on", destAbs}
 	for _, f := range files {
 		args = append(args, f.Name())
 	}

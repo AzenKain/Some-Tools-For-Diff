@@ -16,18 +16,18 @@ type HdiffFile struct {
 }
 
 func MakeHdiffFile(oldPath string, newPath string, changedFiles []string) error {
-	delFile, err := os.Create("hdiff/hdifffiles.txt")
+	diffFile, err := os.Create("hdiff/hdifffiles.txt")
 	if err != nil {
 		return err
 	}
-	defer delFile.Close()
+	defer diffFile.Close()
 
 	for _, f := range changedFiles {
 		data, err := json.Marshal(HdiffFile{RemoteName: f})
 		if err != nil {
 			return err
 		}
-		fmt.Fprintln(delFile, string(data))
+		fmt.Fprintln(diffFile, string(data))
 	}
 
 	bar := progressbar.NewOptions(len(changedFiles),
@@ -37,10 +37,8 @@ func MakeHdiffFile(oldPath string, newPath string, changedFiles []string) error 
 		progressbar.OptionSetPredictTime(true),
 	)
 
-	workers := runtime.NumCPU() / 2
-	if workers < 2 {
-		workers = 2
-	}
+	workers := runtime.NumCPU()
+	
 	jobs := make(chan string, len(changedFiles))
 	var wg sync.WaitGroup
 

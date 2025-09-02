@@ -30,12 +30,10 @@ func safePartialMD5(path string) (string, error) {
 		return "", err
 	}
 	size := fi.Size()
-	modTime := fi.ModTime().UnixNano()
 
 	h := md5.New()
 
 	binary.Write(h, binary.LittleEndian, size)
-	binary.Write(h, binary.LittleEndian, modTime)
 	binary.Write(h, binary.LittleEndian, fi.Mode())
 
 	buf := make([]byte, 4096)
@@ -99,9 +97,7 @@ func DiffFolders(oldPath, newPath string) (*DiffResult, error) {
 	workers := runtime.NumCPU() * 2
 
 	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for job := range jobs {
 				rel, oldFile, newFile := job[0], job[1], job[2]
 				oldHash, _ := safePartialMD5(oldFile)
@@ -113,7 +109,7 @@ func DiffFolders(oldPath, newPath string) (*DiffResult, error) {
 				}
 				bar.Add(1)
 			}
-		}()
+		})
 	}
 
 	for rel, oldFile := range oldFiles {
