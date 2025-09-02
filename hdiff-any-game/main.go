@@ -49,8 +49,8 @@ func main() {
 	fmt.Println("Diffing folders...")
 	result, err := DiffFolders(oldPath, newPath)
 	if err != nil {
-		fmt.Println("Error:", err)
-		return
+		fmt.Fprintln(os.Stderr, "Error:", err)
+		os.Exit(1)
 	}
 	fmt.Println()
 	fmt.Println("Diffing folders done.")
@@ -60,16 +60,16 @@ func main() {
 
 	fmt.Println("Copying new files...")
 	if err := CopyNewFiles(newPath, result); err != nil {
-		fmt.Println("Error writing diff:", err)
-		return
+		fmt.Fprintln(os.Stderr, "Error writing diff:", err)
+		os.Exit(1)
 	}
 	fmt.Println()
 	fmt.Println("Copying new files done.")
 
 	fmt.Println("Making hdiff files...")
 	if err := MakeHdiffFile(oldPath, newPath, result.Changed); err != nil {
-		fmt.Println("Error writing diff:", err)
-		return
+		fmt.Fprintln(os.Stderr, "Error writing diff:", err)
+		os.Exit(1)
 	}
 	fmt.Println()
 	fmt.Println("Making hdiff files done.")
@@ -77,8 +77,17 @@ func main() {
 	fmt.Println("Zipping hdiff files...")
 	if err := ZipWith7za(hdiffFolderPath, hdiffName); err != nil {
 		fmt.Println("Error writing diff:", err)
-		return
+		os.Exit(1)
 	}
+
+	if _, err := os.Stat(hdiffName); os.IsNotExist(err) {
+		fmt.Println("File not found, retrying...")
+		if err := ZipWith7za(hdiffFolderPath, hdiffName); err != nil {
+			fmt.Println("Retry failed:", err)
+			os.Exit(1)
+		}
+	}
+
 	fmt.Println("Zipping hdiff files done.")
 
 	fmt.Println("Removing hdiff temp files...")

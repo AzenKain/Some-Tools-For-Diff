@@ -144,6 +144,14 @@ func main() {
 		fmt.Fprintln(os.Stderr, "error zip hdiff:", err)
 		os.Exit(1)
 	}
+
+	if _, err := os.Stat(hdiff); os.IsNotExist(err) {
+		fmt.Println("File not found, retrying...")
+		if err := ZipWith7za(hdiffFolderPath, hdiff); err != nil {
+			fmt.Println("Retry failed:", err)
+			os.Exit(1)
+		}
+	}
 	fmt.Println("Zipping hdiff files done.")
 
 	fmt.Println("Removing hdiff temp files...")

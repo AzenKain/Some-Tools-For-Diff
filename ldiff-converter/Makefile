@@ -1,4 +1,4 @@
-APP_NAME = ldff-converter.exe
+APP_NAME = ldiff-converter.exe
 
 all: build
 
